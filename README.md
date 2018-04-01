@@ -5,8 +5,8 @@ airspy_tcp is a direct port of [rtl_tcp](https://github.com/osmocom/rtl-sdr) for
 
 As the rtl_tcp protocol is only 8 bits IQ, man will loose the major advantage of an airspy : its 12bits DAC, but :
 
-1. It will works with any rtl_tcp capable frontend (Well I hope, see below)
-2. As it's opensource, you could compile on any Linux (and perhaps other UNIXes) server
+1. It will work with any rtl_tcp capable frontend (Well I hope, see below)
+2. As it's opensource, you could compile it on any Linux (and perhaps other UNIXes) server
 
 Notes :
  - I try it with gqrx and sdrangelove frontend only. Other tests are welcome.

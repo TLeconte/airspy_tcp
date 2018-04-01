@@ -67,6 +67,7 @@ static struct airspy_device* dev = NULL;
 static uint32_t fscount,*supported_samplerates;
 static int verbose=0;
 static int ppm_error=0;
+static int dshift=1;
 
 static int enable_biastee = 0;
 static int global_numq = 0;
@@ -77,15 +78,17 @@ static volatile int do_exit = 0;
 
 void usage(void)
 {
-	printf("airspy_tcp, a 8bits I/Q server for airspy SDR, rtl-tcp compatible\n\n"
+	printf("airspy_tcp, a rtl-tcp compatible, I/Q server for airspy SDR\n\n"
 		"Usage:\t[-a listen address]\n"
 		"\t[-p listen port (default: 1234)]\n"
 		"\t[-f frequency to tune to [Hz]]\n"
 		"\t[-g gain (default: 0 for auto)]\n"
 		"\t[-s samplerate in Hz ]\n"
 		"\t[-n max number of linked list buffers to keep ]\n"
-		"\t[-T enable bias-T\n"
-		"\t[-v Verbose\n");
+		"\t[-T enable bias-T ]\n"
+		"\t[-P ppm_error (default: 0) ]\n"
+		"\t[-D g digital shift (default : 1) ]\n"
+		"\t[-v Verbose ]\n");
 	exit(1);
 }
 
@@ -116,7 +119,7 @@ static int rx_callback(airspy_transfer_t* transfer)
 
 		data=rpt->data;
 		for(i=0;i<len;i++,buf++,data++) {
-			short v=*buf;
+			short v=*buf<<dshift;
 			short o;
 
 			 /* stupid added offset, because osmosdr client code */
@@ -363,7 +366,7 @@ int main(int argc, char **argv)
 	dongle_info_t dongle_info;
 	struct sigaction sigact, sigign;
 
-	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:n:d:P:Tv")) != -1) {
+	while ((opt = getopt(argc, argv, "a:p:f:g:s:b:n:d:P:TD:v")) != -1) {
 		switch (opt) {
 		case 'f':
 			frequency = (uint32_t)atoi(optarg);
@@ -388,6 +391,9 @@ int main(int argc, char **argv)
 			break;
                 case 'P':
                         ppm_error = atoi(optarg);
+                        break;
+                case 'D':
+                        dshift = atoi(optarg);
                         break;
 		case 'v':
 			verbose = 1;
