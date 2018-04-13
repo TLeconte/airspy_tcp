@@ -71,7 +71,9 @@ static int dshift=1;
 
 static int enable_biastee = 0;
 static int global_numq = 0;
-static struct llist *ll_buffers = 0;
+
+static struct llist *ls_buffer = NULL;
+static struct llist *le_buffer = NULL;
 static int llbuf_num = 64;
 
 static volatile int do_exit = 0;
@@ -84,7 +86,7 @@ void usage(void)
 		"\t[-f frequency to tune to [Hz]]\n"
 		"\t[-g gain (default: 0 for auto)]\n"
 		"\t[-s samplerate in Hz ]\n"
-		"\t[-n max number of linked list buffers to keep ]\n"
+		"\t[-n max number of linked list buffer to keep ]\n"
 		"\t[-T enable bias-T ]\n"
 		"\t[-P ppm_error (default: 0) ]\n"
 		"\t[-D g digital shift (default : 1) ]\n"
@@ -103,6 +105,7 @@ static int rx_callback(airspy_transfer_t* transfer)
 {
 	short *buf;
 	int len;
+
 
 	len=2*transfer->sample_count;
 	buf=(short *)transfer->samples;
@@ -136,29 +139,24 @@ static int rx_callback(airspy_transfer_t* transfer)
 
 		pthread_mutex_lock(&ll_mutex);
 
-		if (ll_buffers == NULL) {
-			ll_buffers = rpt;
-		} else {
-			struct llist *cur = ll_buffers;
-			int num_queued = 0;
+		  if (ls_buffer == NULL) {
+			ls_buffer = le_buffer = rpt;
+		  } else {
+			le_buffer->next=rpt;
+			le_buffer=rpt;
+		  }
+		  global_numq++;
 
-			while (cur->next != NULL) {
-				cur = cur->next;
-				num_queued++;
-			}
-
-			if(llbuf_num && llbuf_num == num_queued-2){
-				struct llist *curelem;
-
-				free(ll_buffers->data);
-				curelem = ll_buffers->next;
-				free(ll_buffers);
-				ll_buffers = curelem;
-			}
-
-			cur->next = rpt;
-			global_numq = num_queued;
+		if(global_numq>llbuf_num) {
+			struct llist *curelem;
+			curelem=ls_buffer;
+			ls_buffer=ls_buffer->next;
+			if(ls_buffer==NULL) le_buffer==NULL;
+			global_numq--;
+			free(curelem->data);
+			free(curelem);
 		}
+
 		pthread_cond_signal(&cond);
 		pthread_mutex_unlock(&ll_mutex);
 	}
@@ -167,60 +165,36 @@ static int rx_callback(airspy_transfer_t* transfer)
 
 static void *tcp_worker(void *arg)
 {
-	struct llist *curelem,*prev;
+	struct llist *curelem;
 	int bytesleft,bytessent, index;
-	struct timeval tv= {1,0};
-	struct timespec ts;
-	struct timeval tp;
-	fd_set writefds;
-	int r = 0;
 
 	while(1) {
 		if(do_exit)
 			pthread_exit(0);
 
 		pthread_mutex_lock(&ll_mutex);
-		gettimeofday(&tp, NULL);
-		ts.tv_sec  = tp.tv_sec+5;
-		ts.tv_nsec = tp.tv_usec * 1000;
-		r = pthread_cond_timedwait(&cond, &ll_mutex, &ts);
-		if(r == ETIMEDOUT) {
-			pthread_mutex_unlock(&ll_mutex);
-			printf("worker cond timeout\n");
-			sighandler(0);
-			pthread_exit(NULL);
-		}
+		while(ls_buffer==NULL)
+			pthread_cond_wait(&cond, &ll_mutex);
 
-		curelem = ll_buffers;
-		ll_buffers = 0;
+		curelem = ls_buffer;
+		ls_buffer=ls_buffer->next;
+		global_numq--;
 		pthread_mutex_unlock(&ll_mutex);
 
-		while(curelem != 0) {
-			bytesleft = curelem->len;
-			index = 0;
-			bytessent = 0;
-			while(bytesleft > 0) {
-				FD_ZERO(&writefds);
-				FD_SET(s, &writefds);
-				tv.tv_sec = 1;
-				tv.tv_usec = 0;
-				r = select(s+1, NULL, &writefds, NULL, &tv);
-				if(r) {
-					bytessent = send(s,  &curelem->data[index], bytesleft, 0);
-					bytesleft -= bytessent;
-					index += bytessent;
-				}
-				if(bytessent == SOCKET_ERROR || do_exit) {
-						printf("worker socket bye\n");
-						sighandler(0);
-						pthread_exit(NULL);
-				}
+		bytesleft = curelem->len;
+		index = 0;
+		while(bytesleft > 0) {
+			bytessent = send(s,  &curelem->data[index], bytesleft, 0);
+			bytesleft -= bytessent;
+			index += bytessent;
+			if(bytessent == SOCKET_ERROR || do_exit) {
+					printf("worker socket bye\n");
+					sighandler(0);
+					pthread_exit(NULL);
 			}
-			prev = curelem;
-			curelem = curelem->next;
-			free(prev->data);
-			free(prev);
 		}
+		free(curelem->data);
+		free(curelem);
 	}
 }
 
@@ -590,18 +564,17 @@ int main(int argc, char **argv)
 			break;
                 }
 
-		curelem = ll_buffers;
-		ll_buffers = 0;
-
+		curelem = ls_buffer;
 		while(curelem != 0) {
 			prev = curelem;
 			curelem = curelem->next;
 			free(prev->data);
 			free(prev);
 		}
+		ls_buffer=le_buffer=NULL;
+		global_numq = 0;
 
 		do_exit = 0;
-		global_numq = 0;
 	}
 
 out:
