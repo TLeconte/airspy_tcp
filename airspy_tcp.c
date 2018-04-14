@@ -96,16 +96,14 @@ void usage(void)
 
 static void sighandler(int signum)
 {
-	fprintf(stderr, "Signal caught, exiting!\n");
-        airspy_stop_rx(dev);
 	do_exit = 1;
+	pthread_cond_signal(&cond);
 }
 
 static int rx_callback(airspy_transfer_t* transfer)
 {
 	short *buf;
 	int len;
-
 
 	len=2*transfer->sample_count;
 	buf=(short *)transfer->samples;
@@ -151,7 +149,7 @@ static int rx_callback(airspy_transfer_t* transfer)
 			struct llist *curelem;
 			curelem=ls_buffer;
 			ls_buffer=ls_buffer->next;
-			if(ls_buffer==NULL) le_buffer==NULL;
+			if(ls_buffer==NULL) le_buffer=NULL;
 			global_numq--;
 			free(curelem->data);
 			free(curelem);
@@ -169,12 +167,15 @@ static void *tcp_worker(void *arg)
 	int bytesleft,bytessent, index;
 
 	while(1) {
-		if(do_exit)
-			pthread_exit(0);
 
 		pthread_mutex_lock(&ll_mutex);
-		while(ls_buffer==NULL)
+		while(ls_buffer==NULL && do_exit==0)
 			pthread_cond_wait(&cond, &ll_mutex);
+
+		if(do_exit) {
+			pthread_mutex_unlock(&ll_mutex);
+			pthread_exit(0);
+		}
 
 		curelem = ls_buffer;
 		ls_buffer=ls_buffer->next;
@@ -545,6 +546,7 @@ int main(int argc, char **argv)
 		r = pthread_create(&command_thread, &attr, command_worker, NULL);
 		pthread_attr_destroy(&attr);
 
+		fprintf(stderr,"start rx\n");
 		r = airspy_start_rx(dev, rx_callback, NULL);
 		if( r != AIRSPY_SUCCESS ) {
         		fprintf(stderr,"airspy_start_rx() failed: %s (%d)\n", airspy_error_name(r), r);
@@ -556,7 +558,7 @@ int main(int argc, char **argv)
 
 		close(s);
 
-		fprintf(stderr,"close\n");
+		fprintf(stderr,"stop rx\n");
 
                 r = airspy_stop_rx(dev);
                 if( r != AIRSPY_SUCCESS ) {
