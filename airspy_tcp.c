@@ -280,7 +280,7 @@ static void *command_worker(void *arg)
 			if(verbose) printf("set gain mode %d : not implemented \n", ntohl(cmd.param));
 		case 0x04:
 			if(verbose) printf("set gain : %d\n", ntohl(cmd.param));
-			airspy_set_linearity_gain(dev,(ntohl(cmd.param)+240)/35);
+			airspy_set_linearity_gain(dev,(ntohl(cmd.param)+250)/37);
 			break;
 		case 0x05:
 			if(verbose) printf("set freq correction %d\n",ntohl(cmd.param));
@@ -452,7 +452,7 @@ int main(int argc, char **argv)
                		fprintf(stderr,"airspy_set agc failed: %s (%d)\n", airspy_error_name(r), r);
        		}
 	} else {
-        	r = airspy_set_linearity_gain(dev,(gain+240)/35);
+        	r = airspy_set_linearity_gain(dev,(gain+250)/37);
        		if( r != AIRSPY_SUCCESS ) {
                		fprintf(stderr,"set gains failed: %s (%d)\n", airspy_error_name(r), r);
                		airspy_close(dev);
